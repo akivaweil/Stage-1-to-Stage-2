@@ -155,21 +155,40 @@ void TeachableAxis::gotoSavedPosition() {
     // Activate suction
     digitalWrite(10, LOW);
     
-    // Wait remaining 900ms to complete the 1 second total delay
-    delay(900);
+    // Wait remaining 650ms to complete the 750ms total delay
+    delay(650);
     
     // Retract cylinder and wait for it to retract
     digitalWrite(cylinderPin, HIGH);
-    delay(1000);  // Wait 1 second for cylinder to retract
+    delay(750);  // Wait 750ms for cylinder to retract
     
-    // First return to home
-    moveSteps(teachedPosition);  // Move back to home
+    // Calculate the distance from current position (saved position) to 5 inches from home
+    long targetPosition = -stepsPerInch * 5;  // 5 inches from home
+    long currentPosition = -teachedPosition;   // We're at the saved position
+    long stepsToMove = targetPosition - currentPosition;
     
-    // Then move to 5 inches from home
-    moveSteps(-stepsPerInch * 5);   // Move 5 inches from home
+    // Move directly to 5 inches from home
+    moveSteps(stepsToMove);
     
     // Move servo to 180 degrees
     myservo.write(180);
+    
+    // Extend cylinder at 5-inch position
+    digitalWrite(cylinderPin, LOW);
+    
+    // Wait 650ms
+    delay(650);
+    
+    // Turn off suction 100ms before retracting
+    digitalWrite(10, HIGH);
+    
+    // Wait final 100ms then retract cylinder
+    delay(100);
+    digitalWrite(cylinderPin, HIGH);
+    
+    // Wait 1 second then return servo to 80 degrees
+    delay(1000);
+    myservo.write(80);
 }
 
 void TeachableAxis::home() {

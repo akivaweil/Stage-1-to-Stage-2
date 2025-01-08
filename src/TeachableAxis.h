@@ -18,8 +18,8 @@ public:
         int servoPin,
         float stepsPerInch = 254.0,
         float homingSpeed = 1500.0,
-        float maxSpeed = 20000.0,
-        float acceleration = 20000.0,
+        float maxSpeed = 10000.0,
+        float acceleration = 10000.0,
         bool homeDir = HIGH
     );
 
