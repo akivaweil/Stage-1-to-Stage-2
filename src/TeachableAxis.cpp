@@ -78,21 +78,16 @@ void TeachableAxis::runUntilLimitSwitch(int moveDirection, bool runUntilHigh) {
 }
 
 void TeachableAxis::performHoming() {
-    // First move away from switch if we're on it
     limitSwitch.update();
+
+    // If pressing the switch, move away from it
     if (limitSwitch.read() == HIGH) {
         runUntilLimitSwitch(-1, true);
-        delay(500); // Small delay to ensure we're clear
     }
 
     // Now do the actual homing
     runUntilLimitSwitch(+1, false);
-    
-    // Set this as absolute zero position
     stepper.setCurrentPosition(0);
-    
-    // Move slightly off the switch to prevent false triggers
-    moveSteps(-100); // Back off 100 steps from limit switch
 }
 
 void TeachableAxis::moveSteps(long steps) {
@@ -116,19 +111,30 @@ void TeachableAxis::savePosition() {
     isTeachMode = false;
     stepper.enableOutputs();
 
-    // Remember current position before homing
-    long currentPos = stepper.currentPosition();
-    
-    // Perform homing to establish reference
-    performHoming();
-    
-    // Now move back to where we were and record that position
-    moveSteps(-currentPos);
+    // Reset the step counter
+    teachedPosition = 0;
+
+    // Move off switch if necessary
+    limitSwitch.update();
+    if (limitSwitch.read() == HIGH) {
+        runUntilLimitSwitch(-1, true);
+    }
+
+    // Perform homing while counting steps
+    stepper.setCurrentPosition(0);
+    stepper.setSpeed(homingSpeed);
+
+    while (true) {
+        limitSwitch.update();
+        if (limitSwitch.read() == LOW) {
+            stepper.runSpeed();
+        } else {
+            break;
+        }
+    }
+
     teachedPosition = stepper.currentPosition();
-    
-    Serial.print("Position saved at: ");
-    Serial.print(teachedPosition);
-    Serial.println(" steps from home");
+    stepper.setCurrentPosition(0);
 }
 
 void TeachableAxis::gotoSavedPosition() {
@@ -137,49 +143,37 @@ void TeachableAxis::gotoSavedPosition() {
         return;
     }
     
-    // First ensure we're at home position
-    performHoming();
+    // First move to saved position
+    moveSteps(-teachedPosition);
     
-    // Move to pickup position
-    moveSteps(teachedPosition);
-    
-    // Extend cylinder and activate suction
+    // Extend cylinder immediately at saved position
     digitalWrite(cylinderPin, LOW);
-    delay(1000);
-    digitalWrite(10, LOW); // Activate suction
     
-    // Retract cylinder
+    // Wait 100ms before activating suction
+    delay(100);
+    
+    // Activate suction
+    digitalWrite(10, LOW);
+    
+    // Wait remaining 900ms to complete the 1 second total delay
+    delay(900);
+    
+    // Retract cylinder and wait for it to retract
     digitalWrite(cylinderPin, HIGH);
-    delay(1000);
+    delay(1000);  // Wait 1 second for cylinder to retract
     
-    // Return to home
-    performHoming();
+    // First return to home
+    moveSteps(teachedPosition);  // Move back to home
     
-    // Move to drop-off position (5 inches from home)
-    moveSteps(-stepsPerInch * 5);
+    // Then move to 5 inches from home
+    moveSteps(-stepsPerInch * 5);   // Move 5 inches from home
     
-    // Rotate servo for drop-off
+    // Move servo to 180 degrees
     myservo.write(180);
-    
-    // Extend cylinder for drop-off
-    digitalWrite(cylinderPin, LOW);
-    delay(1000);
-    
-    // Release vacuum
-    digitalWrite(10, HIGH);
-    delay(500);
-    
-    // Retract cylinder
-    digitalWrite(cylinderPin, HIGH);
 }
 
 void TeachableAxis::home() {
     performHoming();
-    
-    // Ensure everything is in default state
-    digitalWrite(cylinderPin, HIGH);
-    digitalWrite(10, HIGH);  // Suction off
-    myservo.write(80);      // Default servo position
 }
 
 void TeachableAxis::update() {
