@@ -95,6 +95,10 @@ void TeachableAxis::moveSteps(long steps) {
     while (stepper.distanceToGo() != 0) {
         stepper.run();
     }
+    // Optional: Verify position after move
+    if (stepper.currentPosition() != stepper.targetPosition()) {
+        Serial.println("Warning: Position mismatch after move");
+    }
 }
 
 void TeachableAxis::enterTeachMode() {
@@ -145,50 +149,50 @@ void TeachableAxis::gotoSavedPosition() {
     
     // First move to saved position
     moveSteps(-teachedPosition);
+    stepper.setCurrentPosition(-teachedPosition);
     
-    // Extend cylinder immediately at saved position
+    // At taught position - activate vacuum first
+    Serial.println("Activating vacuum...");
+    setVacuum(true);
+    if (!getVacuumState()) {
+        Serial.println("Warning: Vacuum failed to activate!");
+    }
+    delay(500);  // Wait for vacuum to establish
+    
+    // Then extend cylinder
+    Serial.println("Extending cylinder...");
     digitalWrite(cylinderPin, LOW);
-    
-    // Wait 100ms before activating suction
-    delay(100);
-    
-    // Activate suction
-    digitalWrite(10, LOW);
-    
-    // Wait remaining 650ms to complete the 750ms total delay
-    delay(650);
+    delay(500);  // Wait for cylinder to fully extend
     
     // Retract cylinder and wait for it to retract
     digitalWrite(cylinderPin, HIGH);
-    delay(750);  // Wait 750ms for cylinder to retract
+    delay(750);
     
-    // Calculate the distance from current position (saved position) to 5 inches from home
-    long targetPosition = -stepsPerInch * 5;  // 5 inches from home
-    long currentPosition = -teachedPosition;   // We're at the saved position
-    long stepsToMove = targetPosition - currentPosition;
-    
-    // Move directly to 5 inches from home
-    moveSteps(stepsToMove);
+    // Move to 5 inches from home
+    long targetPosition = -stepsPerInch * 5;
+    moveSteps(targetPosition - stepper.currentPosition());
+    stepper.setCurrentPosition(targetPosition);
     
     // Move servo to 180 degrees
     myservo.write(180);
     
-    // Extend cylinder at 5-inch position
+    // For release sequence - extend cylinder first (original sequence)
     digitalWrite(cylinderPin, LOW);
-    
-    // Wait 650ms
-    delay(650);
-    
-    // Turn off suction 100ms before retracting
+    delay(500);
     digitalWrite(10, HIGH);
-    
-    // Wait final 100ms then retract cylinder
-    delay(100);
+    delay(500);
     digitalWrite(cylinderPin, HIGH);
     
     // Wait 1 second then return servo to 80 degrees
     delay(1000);
     myservo.write(80);
+    
+    // Home at the end of the cycle to reset position
+    performHoming();
+    
+    // During release
+    setVacuum(false);
+    delay(500);
 }
 
 void TeachableAxis::home() {

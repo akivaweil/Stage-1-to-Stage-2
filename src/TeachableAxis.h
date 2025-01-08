@@ -43,6 +43,17 @@ public:
     // Call this in your main loop
     void update();
 
+    // Add these methods to the class declaration
+    void setVacuum(bool on) {
+        digitalWrite(10, on ? LOW : HIGH);
+        Serial.print("Vacuum: ");
+        Serial.println(on ? "ON" : "OFF");
+    }
+    
+    bool getVacuumState() {
+        return digitalRead(10) == LOW;
+    }
+
 private:
     // Hardware pins
     const int stepPin;
