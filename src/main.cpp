@@ -31,6 +31,11 @@ void setup() {
     digitalWrite(CYLINDER_PIN, HIGH);
     axis.begin();
     
+    // Perform automatic homing on startup
+    Serial.println("Performing initial homing...");
+    axis.home();
+    Serial.println("Homing complete!");
+    
     // Print available commands
     Serial.println("Available commands:");
     Serial.println("  teach  - Enter teach mode (disable motor)");

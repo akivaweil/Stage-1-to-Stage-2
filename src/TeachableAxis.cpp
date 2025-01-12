@@ -25,14 +25,12 @@ TeachableAxis::TeachableAxis(
     acceleration(acceleration),
     homeDir(homeDir),
     moveDir(!homeDir),
-    teachedPosition(0),
-    isTeachMode(false),
     stepper(AccelStepper::DRIVER, stepPin, dirPin),
     limitSwitch()
 {
-    // Initialize suction pin
-    pinMode(10, OUTPUT);
-    digitalWrite(10, HIGH);  // Start with suction off
+    // Initialize vacuum pin
+    pinMode(VACUUM_PIN, OUTPUT);
+    digitalWrite(VACUUM_PIN, HIGH);  // Start with vacuum off
 }
 
 void TeachableAxis::begin() {
@@ -53,6 +51,11 @@ void TeachableAxis::begin() {
     // Initialize servo
     myservo.attach(servoPin);
     myservo.write(80);  // Start at 80 degrees
+    
+    // Ensure cylinder is retracted and vacuum is off at startup
+    digitalWrite(cylinderPin, HIGH);
+    setVacuum(false);
+    delay(500); // Give components time to initialize
 }
 
 void TeachableAxis::runUntilLimitSwitch(int moveDirection, bool runUntilHigh) {
@@ -101,98 +104,72 @@ void TeachableAxis::moveSteps(long steps) {
     }
 }
 
-void TeachableAxis::enterTeachMode() {
-    isTeachMode = true;
-    stepper.disableOutputs();
-}
-
-void TeachableAxis::savePosition() {
-    if (!isTeachMode) {
-        Serial.println("Error: Must be in teach mode to save position");
-        return;
-    }
-
-    isTeachMode = false;
-    stepper.enableOutputs();
-
-    // Reset the step counter
-    teachedPosition = 0;
-
-    // Move off switch if necessary
-    limitSwitch.update();
-    if (limitSwitch.read() == HIGH) {
-        runUntilLimitSwitch(-1, true);
-    }
-
-    // Perform homing while counting steps
-    stepper.setCurrentPosition(0);
-    stepper.setSpeed(homingSpeed);
-
-    while (true) {
-        limitSwitch.update();
-        if (limitSwitch.read() == LOW) {
-            stepper.runSpeed();
-        } else {
-            break;
-        }
-    }
-
-    teachedPosition = stepper.currentPosition();
-    stepper.setCurrentPosition(0);
-}
-
-void TeachableAxis::gotoSavedPosition() {
-    if (teachedPosition == 0) {
-        Serial.println("Error: No position has been taught yet");
-        return;
-    }
+void TeachableAxis::gotoPickupPosition() {
+    // Move to 22.677 inches
+    long targetPosition = -stepsPerInch * 22.677;  // 22.677 inches from home
+    moveSteps(targetPosition);
+    stepper.setCurrentPosition(targetPosition);
     
-    // First move to saved position
-    moveSteps(-teachedPosition);
-    stepper.setCurrentPosition(-teachedPosition);
-    
-    // At taught position - activate vacuum first
+    // At pickup position - activate vacuum first
     Serial.println("Activating vacuum...");
     setVacuum(true);
     if (!getVacuumState()) {
         Serial.println("Warning: Vacuum failed to activate!");
     }
-    delay(500);  // Wait for vacuum to establish
+    delay(Timing::VACUUM_ESTABLISH_DELAY);
     
     // Then extend cylinder
     Serial.println("Extending cylinder...");
     digitalWrite(cylinderPin, LOW);
-    delay(500);  // Wait for cylinder to fully extend
+    delay(Timing::CYLINDER_EXTEND_DELAY);
     
     // Retract cylinder and wait for it to retract
     digitalWrite(cylinderPin, HIGH);
-    delay(750);
+    delay(Timing::CYLINDER_RETRACT_DELAY);
     
-    // Move to 5 inches from home
-    long targetPosition = -stepsPerInch * 5;
+    // Reduce acceleration for smoother movement during servo rotation
+    stepper.setAcceleration(10000);
+    
+    // Move to intermediate position (8 inches from final position)
+    targetPosition = -stepsPerInch * 10;  // 8 + 2 = 10 inches from home
     moveSteps(targetPosition - stepper.currentPosition());
     stepper.setCurrentPosition(targetPosition);
     
-    // Move servo to 180 degrees
-    myservo.write(180);
+    // Start servo rotation to 180 degrees gradually
+    for(int angle = 80; angle <= 180; angle += 2) {
+        myservo.write(angle);
+        delay(20);  // 20ms delay between each 2-degree movement
+    }
     
-    // For release sequence - extend cylinder first (original sequence)
+    // Move to 1.5 inches from home (changed from 2 inches)
+    targetPosition = -stepsPerInch * 1.992;
+    moveSteps(targetPosition - stepper.currentPosition());
+    stepper.setCurrentPosition(targetPosition);
+    
+    // Reset acceleration to original value
+    stepper.setAcceleration(acceleration);
+    
+    // Now extend cylinder for release
     digitalWrite(cylinderPin, LOW);
-    delay(500);
-    digitalWrite(10, HIGH);
-    delay(500);
+    delay(Timing::CYLINDER_EXTEND_DELAY);
+    delay(Timing::VACUUM_PRE_RELEASE_DELAY);  // Wait before turning off vacuum
+    setVacuum(false);
+    delay(Timing::VACUUM_RELEASE_DELAY);
+    
+    // Retract cylinder
     digitalWrite(cylinderPin, HIGH);
     
-    // Wait 1 second then return servo to 80 degrees
+    // Wait 1 second after retracting before returning servo to 80 degrees
     delay(1000);
+    
+    // Return servo to 80 degrees
     myservo.write(80);
+    
+    // Extra delay before homing
+    delay(Timing::PRE_HOME_DELAY);
     
     // Home at the end of the cycle to reset position
     performHoming();
-    
-    // During release
-    setVacuum(false);
-    delay(500);
 }
 
 void TeachableAxis::home() {
@@ -204,31 +181,13 @@ void TeachableAxis::update() {
 }
 
 bool TeachableAxis::processSerialCommand(const String& command) {
-    if (command == "teach" || command == "t") {
-        digitalWrite(cylinderPin, HIGH);
-        digitalWrite(10, HIGH);  // Turn off suction
-        myservo.write(80);  // Return servo to 80 degrees
-        enterTeachMode();
-        Serial.println("Teach mode: Move gantry to desired position manually");
-        Serial.println("Type 's' when position is set");
-        return true;
-    }
-    else if (command == "save" || command == "s") {
-        savePosition();
-        Serial.print("Position saved: ");
-        Serial.print(teachedPosition);
-        Serial.print(" steps (");
-        Serial.print(teachedPosition / stepsPerInch, 3);
-        Serial.println(" inches) from home");
-        return true;
-    }
-    else if (command == "goto" || command == "g") {
-        gotoSavedPosition();
+    if (command == "goto" || command == "g") {
+        gotoPickupPosition();
         return true;
     }
     else if (command == "home" || command == "h") {
         digitalWrite(cylinderPin, HIGH);
-        digitalWrite(10, HIGH);  // Turn off suction
+        setVacuum(false);  // Turn off vacuum
         myservo.write(80);  // Return servo to 80 degrees
         Serial.println("Moving to home position...");
         home();
