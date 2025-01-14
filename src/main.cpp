@@ -170,12 +170,16 @@ void TeachableAxis::runUntilLimitSwitch(int moveDirection, bool runUntilHigh) {
 
 void TeachableAxis::performHoming() {
     limitSwitch.update();
-
-    if (limitSwitch.read() == HIGH) {
-        runUntilLimitSwitch(-1, true);
+    
+    // If we're already at the limit switch (HOME position)
+    if (limitSwitch.read() == LOW) {
+        // Move away from home first
+        runUntilLimitSwitch(+1, false);
+        delay(500); // Small delay to ensure we're clear of the switch
     }
 
-    runUntilLimitSwitch(+1, false);
+    // Now move towards home until we hit the limit switch
+    runUntilLimitSwitch(-1, false);
     stepper.setCurrentPosition(0);
 }
 
@@ -210,16 +214,15 @@ void TeachableAxis::executePickupSequence() {
     
     extendAndRetractCylinder();
     
-    long rotationPos = -stepsPerInch * 5;
-    
     float originalAccel = stepper.acceleration();
     stepper.setAcceleration(10000);
     
-    moveToAbsolutePosition(rotationPos);
-    rotateServo(80, 180);
-    
+    // Move to release position
     long releasePos = -stepsPerInch * releaseDistance;
     moveToAbsolutePosition(releasePos);
+    
+    // Rotate servo after reaching position
+    rotateServo(80, 180);
     
     stepper.setAcceleration(originalAccel);
     
