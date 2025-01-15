@@ -8,6 +8,7 @@ class TeachableAxis {
 public:
     // Pin definitions
     static const int VACUUM_PIN = 12;
+    static const int CYCLE_COMPLETE_PIN = 6;
 
     // Distance parameters
     float pickupDistance = 22.677;  // Default pickup distance in inches
@@ -17,7 +18,7 @@ public:
     struct Timing {
         static const int VACUUM_ESTABLISH_DELAY = 500;    
         static const int CYLINDER_EXTEND_DELAY = 2000;     
-        static const int CYLINDER_RETRACT_DELAY = 1000;    
+        static const int CYLINDER_RETRACT_DELAY = 1500;    
         static const int VACUUM_RELEASE_DELAY = 500;      
         static const int SERVO_SETTLE_DELAY = 1000;       
         static const int VACUUM_PRE_RELEASE_DELAY = 400;  
@@ -123,7 +124,9 @@ TeachableAxis::TeachableAxis(
     limitSwitch()
 {
     pinMode(VACUUM_PIN, OUTPUT);
+    pinMode(CYCLE_COMPLETE_PIN, OUTPUT);
     digitalWrite(VACUUM_PIN, HIGH);  // Start with vacuum off
+    digitalWrite(CYCLE_COMPLETE_PIN, LOW);  // Start with signal off
 }
 
 void TeachableAxis::begin() {
@@ -231,6 +234,12 @@ void TeachableAxis::executePickupSequence() {
     rotateServo(180, 80);
     
     atPickupPosition = true;
+    
+    // Add cycle complete signal
+    digitalWrite(CYCLE_COMPLETE_PIN, HIGH);
+    delay(100);  // 100ms signal
+    digitalWrite(CYCLE_COMPLETE_PIN, LOW);
+    
     Serial.println("Cycle complete. Send 'g' command to start next cycle.");
 }
 
